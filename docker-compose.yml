@@ -27,7 +27,7 @@ services:
         condition: service_healthy
     volumes:
       - ./kafka/create-topics.sh:/create-topics.sh:ro
-    entrypoint: ["bash", "/create-topics.sh"]
+    entrypoint: ["bash", "/crear-topics.sh"]
     restart: "no"
 
   kafka-ui:
