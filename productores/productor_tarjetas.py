@@ -7,8 +7,8 @@ P_MALFORMADO = float(os.getenv("P_MALFORMADO", "0.01"))
 N_TARJETAS = int(os.getenv("N_TARJETAS", "20000"))
 
 TARJETAS = [{"id_tarjeta": f"T-{i:05d}", "id_cliente": f"C-{i:05d}",
-             "ciudad": random.choice(CIUDADES),
-             "gasto_medio": random.choice([30000, 80000, 150000, 300000])}
+            "ciudad": random.choice(CIUDADES),
+            "gasto_medio": random.choice([30000, 80000, 150000, 300000])}
             for i in range(N_TARJETAS)]
 pendientes = []  # eventos ya decididos (ráfagas, segunda ciudad)
 
@@ -32,11 +32,11 @@ def generar():
             b"{esto no es json",
             {"event_id": nuevo_id(), "tipo": "pago_tarjeta", "monto": "abc"},
             {"event_id": nuevo_id(), "tipo": "pago_tarjeta",
-             "id_tarjeta": t["id_tarjeta"], "id_cliente": t["id_cliente"],
-             "monto": -500, "moneda": "COP", "comercio": "X",
-             "ciudad": "Cali", "ts_evento": ahora_ms()},
+                "id_tarjeta": t["id_tarjeta"], "id_cliente": t["id_cliente"],
+                "monto": -500, "moneda": "COP", "comercio": "X",
+                "ciudad": "Cali", "ts_evento": ahora_ms()},
             {"event_id": nuevo_id(), "tipo": "pago_desconocido",
-             "id_tarjeta": t["id_tarjeta"], "monto": 1000, "ts_evento": ahora_ms()}])
+                "id_tarjeta": t["id_tarjeta"], "monto": 1000, "ts_evento": ahora_ms()}])
         return ev, "malformado"
 
     if r < P_MALFORMADO + P_FRAUDE:  # casos de fraude

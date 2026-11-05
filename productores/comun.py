@@ -47,8 +47,8 @@ def correr_a_tasa(tasa, generar, enviar):
         if time.time() - inicio >= 1:
             total = sum(cont.values())
             print(f"{time.strftime('%H:%M:%S')} tasa_real={total} ev/s | "
-                  f"normal={cont['normal']} fraude={cont['fraude']} "
-                  f"malformado={cont['malformado']}", flush=True)
+                f"normal={cont['normal']} fraude={cont['fraude']} "
+                f"malformado={cont['malformado']}", flush=True)
             cont = {k: 0 for k in cont}
             inicio = time.time()
 

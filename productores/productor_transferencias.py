@@ -24,7 +24,7 @@ def generar():
         ev = random.choice([
             b"<<<basura>>>",
             {"event_id": nuevo_id(), "tipo": "transferencia", "cuenta_origen": "AC-00001",
-             "monto": 5000, "ts_evento": ahora_ms()},               # falta cuenta_destino
+                "monto": 5000, "ts_evento": ahora_ms()},               # falta cuenta_destino
             {**transferencia(), "monto": 0},                         # monto no positivo
             {**transferencia(), "monto": "mucho"},                   # monto no numérico
             {**transferencia(), "tipo": "transferencia_rara"}])      # tipo desconocido
