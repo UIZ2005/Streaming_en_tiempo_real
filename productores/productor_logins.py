@@ -25,7 +25,7 @@ def generar():
         ev = random.choice([
             b"{\"tipo\": \"login\"",                                 # JSON cortado
             {"event_id": nuevo_id(), "tipo": "login", "id_cliente": c,
-             "ip": "1.2.3.4", "ts_evento": ahora_ms()},              # falta exito
+                "ip": "1.2.3.4", "ts_evento": ahora_ms()},              # falta exito
             {**login(c, True), "tipo": "logout_raro"}])              # tipo desconocido
         return ev, "malformado"
 
