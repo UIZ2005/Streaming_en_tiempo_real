@@ -41,6 +41,45 @@ services:
       kafka:
         condition: service_healthy
     mem_limit: 512m
+  
+  productor-tarjetas:
+    build: ./productores
+    command: python productor_tarjetas.py
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      TASA: ${TASA_TARJETAS:-200}
+      P_FRAUDE: ${P_FRAUDE_TARJETAS:-0.01}
+      P_MALFORMADO: ${P_MALFORMADO:-0.01}
+    depends_on:
+      kafka-init: { condition: service_completed_successfully }
+    mem_limit: 256m
+    restart: unless-stopped
+
+  productor-transferencias:
+    build: ./productores
+    command: python productor_transferencias.py
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      TASA: ${TASA_TRANSFERENCIAS:-200}
+      P_FRAUDE: ${P_FRAUDE_TRANSFERENCIAS:-0.02}
+      P_MALFORMADO: ${P_MALFORMADO:-0.01}
+    depends_on:
+      kafka-init: { condition: service_completed_successfully }
+    mem_limit: 256m
+    restart: unless-stopped
+
+  productor-logins:
+    build: ./productores
+    command: python productor_logins.py
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      TASA: ${TASA_LOGINS:-200}
+      P_FRAUDE: ${P_FRAUDE_LOGINS:-0.005}
+      P_MALFORMADO: ${P_MALFORMADO:-0.01}
+    depends_on:
+      kafka-init: { condition: service_completed_successfully }
+    mem_limit: 256m
+    restart: unless-stopped
 
 #-----------------------------------------------------------------------------------
 
