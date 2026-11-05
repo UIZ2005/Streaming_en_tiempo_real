@@ -135,65 +135,69 @@ services:
   #     retries: 10
   #   mem_limit: 512m
 
-  # jobmanager:
-  #   build: ./flink
-  #   image: finanzas-flink
-  #   command: jobmanager
-  #   ports:
-  #     - "8081:8081"
-  #   environment:
-  #     FLINK_PROPERTIES: |
-  #       jobmanager.rpc.address: jobmanager
-  #       jobmanager.memory.process.size: 1024m
-  #       parallelism.default: 2
-  #       state.checkpoints.dir: file:///tmp/flink-checkpoints
-  #   volumes:
-  #     - flink-checkpoints:/tmp/flink-checkpoints
-  #   mem_limit: 1300m
+# ---------------------docker para flink enviar jobs de python---------------------------------------------
+  jobmanager:
+    build: ./flink
+    image: finanzas-flink
+    command: jobmanager
+    ports:
+      - "8081:8081"
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: jobmanager
+        jobmanager.memory.process.size: 1024m
+        parallelism.default: 2
+        state.checkpoints.dir: file:///tmp/flink-checkpoints
+    volumes:
+      - flink-checkpoints:/tmp/flink-checkpoints
+    mem_limit: 1300m
+ 
+  taskmanager:
+    image: finanzas-flink
+    command: taskmanager
+    depends_on:
+      - jobmanager
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        taskmanager.memory.process.size: 2048m
+        state.checkpoints.dir: file:///tmp/flink-checkpoints
+    volumes:
+      - flink-checkpoints:/tmp/flink-checkpoints
+    mem_limit: 2500m
+ 
+  flink-submit:
+    image: finanzas-flink
+    depends_on:
+      jobmanager:
+        condition: service_started
+      taskmanager:
+        condition: service_started
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      REINTENTOS: "5"
+      ESPERA_MS: "10000"
+      VENTANA_SEG: "60"
+    volumes:
+      - ./flink/jobs:/opt/jobs:ro
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        until flink list -m jobmanager:8081 > /dev/null 2>&1; do
+          echo "Esperando al JobManager..."; sleep 3
+        done
+        sleep 10
+        flink run -d -m jobmanager:8081 -py /opt/jobs/job_fraude.py
+        flink run -d -m jobmanager:8081 -py /opt/jobs/job_agregaciones.py
+    restart: "no"
+    mem_limit: 512m
 
-  # taskmanager:
-  #   image: finanzas-flink
-  #   command: taskmanager
-  #   depends_on:
-  #     - jobmanager
-  #   environment:
-  #     FLINK_PROPERTIES: |
-  #       jobmanager.rpc.address: jobmanager
-  #       taskmanager.numberOfTaskSlots: 4
-  #       taskmanager.memory.process.size: 2048m
-  #       state.checkpoints.dir: file:///tmp/flink-checkpoints
-  #   volumes:
-  #     - flink-checkpoints:/tmp/flink-checkpoints
-  #   mem_limit: 2500m
-
-  # flink-submit:
-  #   image: finanzas-flink
-  #   depends_on:
-  #     jobmanager:
-  #       condition: service_started
-  #     kafka-init:
-  #       condition: service_completed_successfully
-  #   environment:
-  #     REINTENTOS: "5"
-  #     ESPERA_MS: "10000"
-  #   volumes:
-  #     - ./flink/jobs:/opt/jobs:ro
-  #   entrypoint: ["bash", "-c"]
-  #   command:
-  #     - |
-  #       until flink list -m jobmanager:8081 > /dev/null 2>&1; do
-  #         echo "Esperando al JobManager..."; sleep 3
-  #       done
-  #       sleep 10
-  #       flink run -d -m jobmanager:8081 -py /opt/jobs/job_fraude.py
-  #       flink run -d -m jobmanager:8081 -py /opt/jobs/job_agregaciones.py
-  #   restart: "no"
-  #   mem_limit: 512m
 
 
 
-
-# volumes:
+volumes:
 #   influx-data:
 #   grafana-data:
-#   flink-checkpoints:
+ flink-checkpoints:
