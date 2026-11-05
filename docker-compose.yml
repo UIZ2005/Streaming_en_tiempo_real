@@ -19,29 +19,25 @@ services:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
       interval: 10s
       retries: 10
+      start_period: 15s
 
   kafka-init:
     image: apache/kafka:3.8.0
     depends_on:
-      kafka:
-        condition: service_healthy
-    volumes:
-      - ./kafka/create-topics.sh:/create-topics.sh:ro
-    entrypoint: ["bash", "/crear-topics.sh"]
+      kafka: { condition: service_healthy }
+    volumes: ["./kafka/crear-topics.sh:/crear-topics.sh"]
+    entrypoint: ["sh", "/crear-topics.sh"]
     restart: "no"
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
-    ports:
-      - "8080:8080"
+    ports: ["8080:8080"]
     environment:
-      KAFKA_CLUSTERS_0_NAME: Streaming_en_tiempo_real
+      KAFKA_CLUSTERS_0_NAME: finanzas
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
     depends_on:
-      kafka:
-        condition: service_healthy
-    mem_limit: 512m
-  
+      kafka: { condition: service_healthy }
+
   productor-tarjetas:
     build: ./productores
     command: python productor_tarjetas.py
