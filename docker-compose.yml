@@ -1,0 +1,202 @@
+services:
+  kafka:
+    image: apache/kafka:3.8.0
+    ports: ["29092:29092"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      retries: 10
+      start_period: 15s
+
+  kafka-init:
+    image: apache/kafka:3.8.0
+    depends_on:
+      kafka: { condition: service_healthy }
+    volumes: ["./kafka/crear-topics.sh:/crear-topics.sh"]
+    entrypoint: ["sh", "/crear-topics.sh"]
+    restart: "no"
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    ports: ["8080:8080"]
+    environment:
+      KAFKA_CLUSTERS_0_NAME: finanzas
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      kafka: { condition: service_healthy }
+
+  productor-tarjetas:
+    build: ./productores
+    command: python productor_tarjetas.py
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      TASA: ${TASA_TARJETAS:-200}
+      P_FRAUDE: ${P_FRAUDE_TARJETAS:-0.01}
+      P_MALFORMADO: ${P_MALFORMADO:-0.01}
+    depends_on:
+      kafka-init: { condition: service_completed_successfully }
+    mem_limit: 256m
+    restart: unless-stopped
+
+  productor-transferencias:
+    build: ./productores
+    command: python productor_transferencias.py
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      TASA: ${TASA_TRANSFERENCIAS:-200}
+      P_FRAUDE: ${P_FRAUDE_TRANSFERENCIAS:-0.02}
+      P_MALFORMADO: ${P_MALFORMADO:-0.01}
+    depends_on:
+      kafka-init: { condition: service_completed_successfully }
+    mem_limit: 256m
+    restart: unless-stopped
+
+  productor-logins:
+    build: ./productores
+    command: python productor_logins.py
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      TASA: ${TASA_LOGINS:-200}
+      P_FRAUDE: ${P_FRAUDE_LOGINS:-0.005}
+      P_MALFORMADO: ${P_MALFORMADO:-0.01}
+    depends_on:
+      kafka-init: { condition: service_completed_successfully }
+    mem_limit: 256m
+    restart: unless-stopped
+
+
+  influxdb:
+    image: influxdb:2.7
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: uao
+      DOCKER_INFLUXDB_INIT_BUCKET: finanzas
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN}
+    volumes:
+      - influx-data:/var/lib/influxdb2
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8086/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 1g
+
+  telegraf:
+    image: telegraf:1.32
+    environment:
+      INFLUX_TOKEN: ${INFLUX_TOKEN}
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 256m
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 1s
+      INFLUX_TOKEN: ${INFLUX_TOKEN}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 512m
+
+# ---------------------docker para flink enviar jobs de python---------------------------------------------
+  jobmanager:
+    build: ./flink
+    image: finanzas-flink
+    command: jobmanager
+    ports:
+      - "8081:8081"
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: jobmanager
+        jobmanager.memory.process.size: 1024m
+        parallelism.default: 2
+        state.checkpoints.dir: file:///tmp/flink-checkpoints
+    volumes:
+      - flink-checkpoints:/tmp/flink-checkpoints
+    mem_limit: 1300m
+ 
+  taskmanager:
+    image: finanzas-flink
+    command: taskmanager
+    depends_on:
+      - jobmanager
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        taskmanager.memory.process.size: 2048m
+        state.checkpoints.dir: file:///tmp/flink-checkpoints
+    volumes:
+      - flink-checkpoints:/tmp/flink-checkpoints
+    mem_limit: 2500m
+ 
+  flink-submit:
+    image: finanzas-flink
+    depends_on:
+      jobmanager:
+        condition: service_started
+      taskmanager:
+        condition: service_started
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      REINTENTOS: "5"
+      ESPERA_MS: "10000"
+      VENTANA_SEG: "60"
+    volumes:
+      - ./flink/jobs:/opt/jobs:ro
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        until flink list -m jobmanager:8081 > /dev/null 2>&1; do
+          echo "Esperando al JobManager..."; sleep 3
+        done
+        sleep 10
+        flink run -d -m jobmanager:8081 -py /opt/jobs/job_fraude.py
+        flink run -d -m jobmanager:8081 -py /opt/jobs/job_agregaciones.py
+    restart: "no"
+    mem_limit: 512m
+
+
+
+
+volumes:
+  influx-data:
+  grafana-data:
+  flink-checkpoints:
