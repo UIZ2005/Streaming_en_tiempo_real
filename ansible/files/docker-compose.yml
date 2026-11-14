@@ -1,0 +1,154 @@
+services:
+  users_db:
+    image: mysql:8.0
+    env_file: [./bases.env]
+    environment:
+      MYSQL_DATABASE: UsersDatabase
+    volumes:
+      - users_db_data:/var/lib/mysql
+      - ./users.sql:/docker-entrypoint-initdb.d/users.sql:ro
+    networks: [backend]
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  products_db:
+    image: mysql:8.0
+    env_file: [./bases.env]
+    environment:
+      MYSQL_DATABASE: ProductsDatabase
+    volumes:
+      - products_db_data:/var/lib/mysql
+      - ./products.sql:/docker-entrypoint-initdb.d/products.sql:ro
+    networks: [backend]
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  orders_db:
+    image: mysql:8.0
+    env_file: [./bases.env]
+    environment:
+      MYSQL_DATABASE: OrdersDatabase
+    volumes:
+      - orders_db_data:/var/lib/mysql
+      - ./orders.sql:/docker-entrypoint-initdb.d/orders.sql:ro
+    networks: [backend]
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  consul:
+    image: consul:1.15
+    container_name: consul
+    command: agent -dev -client=0.0.0.0
+    ports: ["8500:8500"]
+    networks: [backend]
+    restart: always
+
+  users:
+    image: uiiz/users-service:1.0
+    container_name: users-service
+    env_file: [./users.env]
+    environment:
+      CONSUL_HTTP_ADDR: consul:8500
+    depends_on:
+      users_db: {condition: service_healthy}
+      consul: {condition: service_started}
+    ports: ["3001:3001"]
+    networks: [backend]
+    restart: always
+  
+  users2:
+    image: uiiz/users-service:1.0
+    container_name: users-service-2
+    env_file: [./users.env]
+    environment:
+      CONSUL_HTTP_ADDR: consul:8500
+    depends_on:
+      users_db: {condition: service_healthy}
+      consul: {condition: service_started}
+    ports: ["3011:3001"]
+    networks: [backend]
+    restart: always
+
+  products:
+    image: uiiz/products-service:1.0
+    container_name: products-service
+    env_file: [./products.env]
+    environment:
+      CONSUL_HTTP_ADDR: consul:8500
+    depends_on:
+      products_db: {condition: service_healthy}
+      consul: {condition: service_started}
+    ports: ["3002:3002"]
+    networks: [backend]
+    restart: always
+
+  products2:
+    image: uiiz/products-service:1.0
+    container_name: products-service-2
+    env_file: [./products.env]
+    environment:
+      CONSUL_HTTP_ADDR: consul:8500
+    depends_on:
+      products_db: {condition: service_healthy}
+      consul: {condition: service_started}
+    ports: ["3012:3002"]
+    networks: [backend]
+    restart: always
+
+  orders:
+    image: uiiz/orders-service:1.0
+    container_name: orders-service
+    env_file: [./ordenes.env]
+    environment:
+      CONSUL_HTTP_ADDR: consul:8500
+    depends_on:
+      orders_db: {condition: service_healthy}
+      consul: {condition: service_started}
+    ports: ["3003:3003"]
+    networks: [backend]
+    restart: always
+
+  orders2:
+    image: uiiz/orders-service:1.0
+    container_name: orders-service-2
+    env_file: [./ordenes.env]
+    environment:
+      CONSUL_HTTP_ADDR: consul:8500
+    depends_on:
+      orders_db: {condition: service_healthy}
+      consul: {condition: service_started}
+    ports: ["3013:3003"]
+    networks: [backend]
+    restart: always
+
+  frontend:
+    image: uiiz/front-service:1.1
+    container_name: frontend
+    env_file: [./front.env]
+    environment:
+      CONSUL_HTTP_ADDR: consul:8500
+    depends_on: [users, products, orders, consul]
+    ports: ["5001:5001"]
+    networks: [backend]
+    restart: always
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  users_db_data:
+  products_db_data:
+  orders_db_data:
