@@ -1,0 +1,136 @@
+---
+# ============================================================
+# Esperar a que la VM recién creada esté lista
+# ============================================================
+- name: Esperar a que la VM responda
+  hosts: all
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Esperar conexión SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+
+    - name: Esperar a que cloud-init termine (evita que apt esté bloqueado)
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+      failed_when: false
+
+# ============================================================
+# vm-streaming -> Docker + stack Kafka/Flink/InfluxDB/Grafana
+# ============================================================
+- name: Desplegar el stack de streaming financiero
+  hosts: streaming
+  become: true
+  vars:
+    proyecto_local: "{{ playbook_dir }}/.."   # raíz del repo en el nodo de control
+    destino: /opt/streaming                   # carpeta en la VM
+    esperar_jobs_flink: false                 # pon true cuando los jobs de Flink ya existan
+  tasks:
+    # ---------- Docker ----------
+    - name: Instalar paquetes base
+      ansible.builtin.apt:
+        name: [ca-certificates, curl]
+        state: present
+        update_cache: true
+        lock_timeout: 300
+
+    - name: Crear carpeta para llaves de repositorios
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Descargar llave GPG oficial de Docker
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Agregar repositorio oficial de Docker
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu jammy stable"
+        filename: docker
+        state: present
+
+    - name: Instalar Docker Engine y Docker Compose
+      ansible.builtin.apt:
+        name: [docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin]
+        state: present
+        update_cache: true
+        lock_timeout: 300
+
+    - name: Docker activo y habilitado al inicio del sistema
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Permitir que azureuser use docker sin sudo
+      ansible.builtin.user:
+        name: azureuser
+        groups: docker
+        append: true
+
+    # ---------- Proyecto ----------
+    - name: Crear carpeta del proyecto
+      ansible.builtin.file:
+        path: "{{ destino }}"
+        state: directory
+        mode: "0755"
+
+    - name: Copiar docker-compose.yml
+      ansible.builtin.copy:
+        src: "{{ proyecto_local }}/docker-compose.yml"
+        dest: "{{ destino }}/docker-compose.yml"
+        mode: "0644"
+
+    - name: Copiar .env
+      ansible.builtin.copy:
+        src: "{{ proyecto_local }}/.env"
+        dest: "{{ destino }}/.env"
+        mode: "0600"
+
+    - name: Copiar carpetas del proyecto
+      ansible.builtin.copy:
+        src: "{{ proyecto_local }}/{{ item }}"
+        dest: "{{ destino }}/"
+      loop:
+        - kafka
+        - productores
+        - flink
+        - telegraf
+        - grafana
+
+    # ---------- Levantar el stack ----------
+    - name: Construir imágenes y levantar el stack
+      ansible.builtin.command: docker compose up -d --build
+      args:
+        chdir: "{{ destino }}"
+      async: 1800
+      poll: 15
+      register: compose
+      changed_when: "'Started' in compose.stderr or 'Created' in compose.stderr or 'Recreated' in compose.stderr"
+
+    - name: Esperar a que los 2 jobs de Flink estén en RUNNING
+      ansible.builtin.uri:
+        url: http://localhost:8081/jobs/overview
+        return_content: true
+      register: jobs
+      until: >
+        jobs.status == 200 and
+        (jobs.json.jobs | selectattr('state', 'equalto', 'RUNNING') | list | length) >= 2
+      retries: 30
+      delay: 10
+      when: esperar_jobs_flink | bool
+
+    - name: Ver estado de los contenedores
+      ansible.builtin.command: docker compose ps -a
+      args:
+        chdir: "{{ destino }}"
+      register: dps
+      changed_when: false
+
+    - name: Resultado de docker compose ps
+      ansible.builtin.debug:
+        var: dps.stdout_lines
