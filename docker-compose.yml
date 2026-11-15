@@ -160,11 +160,11 @@ services:
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: jobmanager
         taskmanager.numberOfTaskSlots: 4
-        taskmanager.memory.process.size: 2048m
+        taskmanager.memory.process.size: 3070m
         state.checkpoints.dir: file:///tmp/flink-checkpoints
     volumes:
       - flink-checkpoints:/tmp/flink-checkpoints
-    mem_limit: 2500m
+    mem_limit: 3500m
  
   flink-submit:
     image: finanzas-flink
@@ -193,7 +193,16 @@ services:
     restart: "no"
     mem_limit: 512m
 
-
+# para hacer pruebas controladas de lo que es flink y los dlq de forma controlada  verificar lso casos de prueba
+  pruebas:
+    build: ./productores
+    profiles: ["pruebas"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+    volumes:
+      - ./pruebas:/pruebas
+    working_dir: /pruebas
+    entrypoint: ["python"]
 
 
 volumes:
