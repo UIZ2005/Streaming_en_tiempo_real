@@ -22,8 +22,4 @@ variable "os_disk_gb" {
   default     = 64
 }
 
-variable "ips_permitidas" {
-  description = "IPs públicas con acceso a SSH y a las interfaces web, en formato CIDR. Ej: [\"203.0.113.10/32\"]"
-  type        = list(string)
-  # Sin default a propósito: obliga a decidir quién puede entrar
-}
+

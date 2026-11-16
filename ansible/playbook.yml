@@ -101,6 +101,7 @@
         - flink
         - telegraf
         - grafana
+        - pruebas
 
     # ---------- Levantar el stack ----------
     - name: Construir imágenes y levantar el stack
