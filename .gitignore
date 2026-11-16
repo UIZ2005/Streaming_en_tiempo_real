@@ -3,7 +3,7 @@ terraform/.terraform/
 terraform/*.tfstate*
 terraform/terraform.tfvars
 ansible/inventory.ini
-
+.vagrant/
 # Entornos virtuales
 .venv/
 venv/

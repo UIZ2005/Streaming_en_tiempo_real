@@ -17,34 +17,22 @@ resource "azurerm_subnet" "subnet" {
   address_prefixes     = ["10.0.1.0/24"]
 }
 
-# Firewall: solo las IPs de var.ips_permitidas pueden entrar
+# Firewall
 resource "azurerm_network_security_group" "nsg" {
   name                = "nsg-streaming"
   location            = var.location
   resource_group_name = azurerm_resource_group.rg.name
 
+  # 22 SSH | 3000 Grafana | 8080 Kafka UI | 8081 Flink | 8086 InfluxDB
   security_rule {
-    name                       = "ssh"
+    name                       = "puertos-permitidos"
     priority                   = 100
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "Tcp"
     source_port_range          = "*"
-    destination_port_range     =  ["22", "80", "8080", "3000","8081","8086"]
-    source_address_prefixes    = "*"
-    destination_address_prefix = "*"
-  }
-
-  # 3000 Grafana | 8080 Kafka UI | 8081 Flink | 8086 InfluxDB (API REST)
-  security_rule {
-    name                       = "interfaces-web"
-    priority                   = 110
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_ranges    = ["3000", "8080", "8081", "8086"]
-    source_address_prefixes    = var.ips_permitidas
+    destination_port_ranges    = ["22", "3000", "8080", "8081", "8086"]
+    source_address_prefix      = "*"
     destination_address_prefix = "*"
   }
 }
