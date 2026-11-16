@@ -3,3 +3,17 @@ terraform/.terraform/
 terraform/*.tfstate*
 terraform/terraform.tfvars
 ansible/inventory.ini
+
+# Entornos virtuales
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Outputs generados
+pruebas/latencia.csv
+pruebas/*.csv
+
+# Sistema
+.DS_Store
+Thumbs.db
