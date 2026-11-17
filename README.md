@@ -2,11 +2,10 @@
 
 Simulación de un sistema de monitoreo de transacciones bancarias. Los productores generan pagos, transferencias e inicios de sesión; Kafka los recibe, Flink los valida, calcula agregados por minuto y detecta fraude, Telegraf los lleva a InfluxDB y Grafana los muestra en vivo.
 
-**Stack:** Kafka (KRaft) + Flink (PyFlink) + Telegraf + InfluxDB + Grafana, todo con Docker Compose.
 
 ## Arquitectura
 
-**PONER IMAGEN**
+![Arquitectura del sistema](Arquitectura.png)
 
 El proyecto se puede ejecutar de forma local mediante docker o en la nube de azure con una VM creada con Terraform y configurada con Ansible.
 
@@ -21,7 +20,6 @@ El proyecto se puede ejecutar de forma local mediante docker o en la nube de azu
 ├── telegraf/                 # Configuración de Telegraf
 ├── grafana/                  # Datasource y dashboard (provisioning)
 ├── pruebas/                  # Scripts de latencia y mensajes malformados
-├── docs/                     # Esquemas, capturas y reporte de rendimiento
 ├── terraform/                # Infraestructura en Azure (VM, red, firewall)
 ├── ansible/                  # Configuración de la VM (Docker y despliegue del stack)
 ├── Vagrantfile               # Nodo de control con Terraform, Ansible y Azure CLI
@@ -44,7 +42,6 @@ cp .env.example .env
 | `TASA_TRANSFERENCIAS` | Eventos por segundo del productor de transferencias |
 | `TASA_LOGINS` | Eventos por segundo del productor de logins |
 
-Cambia los valores de ejemplo por contraseñas y un token propios. El `.env` contiene secretos: **no lo subas a GitHub** (ya está en `.gitignore`).
 
 ---
 
@@ -62,15 +59,13 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-La primera vez tarda varios minutos porque descarga imágenes y construye la de Flink.
-
 ### Servicios y URLs (local)
 | Servicio | URL |
 |---|---|
 | Kafka UI | http://localhost:8080 |
 | Flink | http://localhost:8081 |
 | Grafana | http://localhost:3000 (usuario y contraseña:admin) |
-| InfluxDB | http://localhost:8086 |
+| InfluxDB | http://localhost:8086 (usuario:admin  contraseña:admin1234)|
 
 ---
 
@@ -133,7 +128,7 @@ Cuando los jobs de Flink ya existan, activa en el playbook `esperar_jobs_flink: 
 terraform output
 ```
 
-Muestra la IP pública, el comando SSH y las URLs:
+Muestra la IP pública de la máquina virtual en azure, el comando SSH y las URLs:
 
 | Servicio | URL |
 |---|---|
@@ -195,3 +190,15 @@ Los crea automáticamente el servicio `kafka-init` (3 particiones, retención de
 | `agregados-minuto` | Job 1 de Flink | Telegraf | Conteo, promedio y máximo por minuto |
 | `alertas-fraude` | Job 2 de Flink | Telegraf | Alertas de fraude |
 | `dlq` | Job 2 de Flink | Telegraf | Mensajes mal formados con el motivo del error |
+
+## Job flink
+
+Apache Flink procesa los eventos a medida que llegan a Kafka, sin esperar a tener todos los datos. El proyecto tiene dos jobs escritos en Python, en la carpeta `flink/jobs/`. El servicio `flink-submit` los envía automáticamente al arrancar el stack, y se pueden ver en la interfaz de Flink: http://localhost:8081 → *Running Jobs*.
+ 
+| | Job 2 | Job 1 |
+|---|---|---|
+| **Archivo** | `job_fraude.py` | `job_agregaciones.py` |
+| **Nombre en Flink** | `job2-fraude-dlq` | `job1-agregaciones` |
+| **Lee de** | `pagos-tarjeta`, `transferencias`, `logins` | `eventos-validos` |
+| **Escribe en** | `eventos-validos`, `alertas-fraude`, `dlq` | `agregados-minuto` |
+| **Qué hace** | Valida cada mensaje, detecta fraude y aparta los mensajes malos | Resume la actividad de cada minuto |
