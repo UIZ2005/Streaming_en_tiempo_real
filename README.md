@@ -193,7 +193,7 @@ Los crea automáticamente el servicio `kafka-init` (3 particiones, retención de
 
 ## Job flink
 
-Apache Flink procesa los eventos a medida que llegan a Kafka, sin esperar a tener todos los datos. El proyecto tiene dos jobs escritos en Python, en la carpeta `flink/jobs/`. El servicio `flink-submit` los envía automáticamente al arrancar el stack, y se pueden ver en la interfaz de Flink: http://localhost:8081 → *Running Jobs*.
+Apache Flink procesa los eventos a medida que llegan a Kafka, sin esperar a tener todos los datos. El proyecto tiene dos jobs escritos en Python, en la carpeta `flink/jobs/`. El servicio `flink-submit` los envía automáticamente al arrancar el stack, y se pueden ver en la interfaz de Flink: http://localhost:8081.
  
 | | Job 2 | Job 1 |
 |---|---|---|
