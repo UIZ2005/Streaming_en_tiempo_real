@@ -135,7 +135,7 @@ Muestra la IP pública de la máquina virtual en azure, el comando SSH y las URL
 | Grafana | `http://<IP>:3000` (admin / admin) |
 | Kafka UI | `http://<IP>:8080` |
 | Flink | `http://<IP>:8081` |
-| InfluxDB | `http://<IP>:8086` |
+| InfluxDB | `http://<IP>:8086` (admin / admin1234)|
 
 Para entrar a la VM y revisar los contenedores:
 
