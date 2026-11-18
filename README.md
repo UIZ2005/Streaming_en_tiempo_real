@@ -1,5 +1,12 @@
 # Pipeline de streaming financiero: detección de fraude en tiempo real
 
+## Desarrolladores
+- Luis Carlos Lozano
+- Isabella Lopez Ibarra
+- Cristian Ándres Mera
+- Miguel Ángel Mosquera
+
+
 Simulación de un sistema de monitoreo de transacciones bancarias. Los productores generan pagos, transferencias e inicios de sesión; Kafka los recibe, Flink los valida, calcula agregados por minuto y detecta fraude, Telegraf los lleva a InfluxDB y Grafana los muestra en vivo.
 
 ## Link de la presentación del proyecto
