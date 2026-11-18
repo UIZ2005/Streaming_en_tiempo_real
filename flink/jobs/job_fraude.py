@@ -6,7 +6,7 @@ import json
 import os
 import time
 
-from pyflink.common import Types, WatermarkStrategy
+from pyflink.common import Configuration, Types, WatermarkStrategy
 from pyflink.common.restart_strategy import RestartStrategies
 from pyflink.common.serialization import SimpleStringSchema
 from pyflink.datastream import StreamExecutionEnvironment, OutputTag
@@ -15,12 +15,12 @@ from pyflink.datastream.state import ValueStateDescriptor
 from pyflink.datastream.connectors.kafka import (
     KafkaSource, KafkaSink, KafkaOffsetsInitializer, KafkaRecordSerializationSchema)
 
-# ----------------- configuracion
+# ---------------------------------------------------------------- configuracion
 BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "kafka:9092")
-REINTENTOS = int(os.getenv("REINTENTOS", "5"))      
-ESPERA_MS = int(os.getenv("ESPERA_MS", "10000"))    #  espera entre reintentos
+REINTENTOS = int(os.getenv("REINTENTOS", "5"))      # R2.8: cuantas veces se reinicia el job si falla
+ESPERA_MS = int(os.getenv("ESPERA_MS", "10000"))    # R2.8: espera entre reintentos
 
-# Campos obligatorios por tipo de evento
+# Campos obligatorios por tipo de evento (contrato JSON acordado por el equipo)
 OBLIGATORIOS = {
     "pago_tarjeta": ["event_id", "id_tarjeta", "monto", "ciudad", "ts_evento"],
     "transferencia": ["event_id", "cuenta_origen", "cuenta_destino", "monto", "ts_evento"],
@@ -30,15 +30,15 @@ OBLIGATORIOS = {
 CAMPO_CLAVE = {"pago_tarjeta": "id_tarjeta", "transferencia": "cuenta_origen", "login": "id_cliente"}
 
 # Parametros de las reglas de fraude
-UMBRAL_FIJO = {"pago_tarjeta": 10_000_000, "transferencia": 20_000_000}  
-VECES_PROMEDIO = 10          # monto mayor a 10 veces el promedio de esa clave
-MIN_HISTORIAL = 3            # solo si la clave ya tiene 3 transacciones
-MAX_PAGOS_MINUTO = 10        #  mas de 10 pagos en 60 s
+UMBRAL_FIJO = {"pago_tarjeta": 10_000_000, "transferencia": 20_000_000}  # COP
+VECES_PROMEDIO = 10          # monto > 10 veces el promedio de esa clave
+MIN_HISTORIAL = 3            # ...solo si la clave ya tiene 3 transacciones
+MAX_PAGOS_MINUTO = 10        # alta frecuencia: mas de 10 pagos en 60 s
 VENTANA_CIUDAD_MS = 600_000  # ubicacion imposible: otra ciudad en menos de 10 min
-MAX_FALLOS_LOGIN = 5         #  5 fallos en 2 min
+MAX_FALLOS_LOGIN = 5         # fuerza bruta: 5 fallos en 2 min
 VENTANA_LOGIN_MS = 120_000
 
-DLQ = OutputTag("dlq", Types.STRING())  
+DLQ = OutputTag("dlq", Types.STRING())  # "salida lateral" para los mensajes invalidos
 
 
 def ahora_ms():
@@ -46,7 +46,7 @@ def ahora_ms():
 
 
 def es_numero(x):
-    
+    # bool es subclase de int en Python, por eso se excluye
     return isinstance(x, (int, float)) and not isinstance(x, bool)
 
 
@@ -62,9 +62,9 @@ def sink(topic):
             .build())
 
 
-# --- 1. validacion
+# ---------------------------------------------------------------- 1. validacion
 class Validar(ProcessFunction):
-    """Revisa cada mensaje. Valido sigue. Invalido va output DLQ """
+    """Revisa cada mensaje. Valido -> sigue. Invalido -> side output DLQ (el job NO se cae)."""
 
     def process_element(self, valor, ctx):
         try:
@@ -97,7 +97,7 @@ def clave(valor):
     return f"{ev['tipo']}:{ev[CAMPO_CLAVE[ev['tipo']]]}"
 
 
-# -- 2. deteccion de fraude esta es la etapa dos del job para saer si hay un fraude
+# ---------------------------------------------------------------- 2. deteccion de fraude
 ESTADO_INICIAL = '{"n": 0, "suma": 0, "ts": [], "ciudad": null, "ts_ciudad": 0, "fallos": []}'
 
 
@@ -114,7 +114,7 @@ class DetectarFraude(KeyedProcessFunction):
         t = ev["ts_evento"]
         alertas = []
 
-        #  MONTO FUERA DE RANGO (pagos y transferencias)
+        # Regla 1: MONTO FUERA DE RANGO (pagos y transferencias)
         if ev["tipo"] in UMBRAL_FIJO:
             m = ev["monto"]
             prom = st["suma"] / st["n"] if st["n"] else 0
@@ -126,23 +126,23 @@ class DetectarFraude(KeyedProcessFunction):
             st["suma"] += m
 
         if ev["tipo"] == "pago_tarjeta":
-            #  ALTA FRECUENCIA 
+            # Regla 2: ALTA FRECUENCIA (ventana deslizante manual de 60 s)
             st["ts"] = [x for x in st["ts"] if t - x < 60_000] + [t]
-            # Se alerta UNA vez, justo cuando se cruza el limite mas de 10 pagos,
-            
+            # Se alerta UNA vez, justo cuando se cruza el limite (pago numero 11),
+            # para no repetir la alerta con cada pago siguiente de la misma rafaga.
             if len(st["ts"]) == MAX_PAGOS_MINUTO + 1:
                 alertas.append(("ALTA_FRECUENCIA", f"{len(st['ts'])} pagos en 60 s"))
-
-            #  UBICACION IMPOSIBLE
+            # Regla 3: UBICACION IMPOSIBLE
             if st["ciudad"] and ev["ciudad"] != st["ciudad"] and t - st["ts_ciudad"] < VENTANA_CIUDAD_MS:
                 minutos = (t - st["ts_ciudad"]) / 60_000
                 alertas.append(("UBICACION_IMPOSIBLE", f"{st['ciudad']} -> {ev['ciudad']} en {minutos:.1f} min"))
-                # La ciudad sospechosa NO reemplaza a la habitual
+                # La ciudad sospechosa NO reemplaza a la habitual: asi, cuando la tarjeta
+                # vuelve a usarse en su ciudad normal, no se genera una segunda alerta.
                 st["ts_ciudad"] = t
             else:
                 st["ciudad"], st["ts_ciudad"] = ev["ciudad"], t
 
-        #  FUERZA BRUTA EN LOGIN
+        # Regla 4: FUERZA BRUTA EN LOGIN
         if ev["tipo"] == "login" and not ev["exito"]:
             st["fallos"] = [x for x in st["fallos"] if t - x < VENTANA_LOGIN_MS] + [t]
             if len(st["fallos"]) == MAX_FALLOS_LOGIN:  # una alerta por ataque
@@ -164,9 +164,15 @@ class DetectarFraude(KeyedProcessFunction):
             }, ensure_ascii=False)
 
 
-# ------- armado del job --------------------------------------------------
+# ---------------------------------------------------------------- 3. armado del job
 def main():
-    env = StreamExecutionEnvironment.get_execution_environment()
+    config = Configuration()
+    # Rendimiento: PyFlink guarda en memoria del proceso Python el estado de solo 1.000 claves por defecto.
+    # Con ~60.000 tarjetas, cuentas y clientes, casi cada evento tenia que pedir su estado a Java
+    # (operador al 100 % de ocupacion). Con este cache el estado se lee localmente.
+    config.set_string("python.state.cache-size", os.getenv("STATE_CACHE", "100000"))
+    env = StreamExecutionEnvironment.get_execution_environment(config)
+    env.set_parallelism(int(os.getenv("PARALELISMO", "2")))  # 2 copias de cada operador en paralelo
     env.enable_checkpointing(10_000)  # foto del estado cada 10 s
     env.set_restart_strategy(RestartStrategies.fixed_delay_restart(REINTENTOS, ESPERA_MS))
 
@@ -178,7 +184,7 @@ def main():
               .set_value_only_deserializer(SimpleStringSchema())
               .build())
 
-    
+    # Las reglas usan ts_evento directamente, no hacen falta watermarks en este job
     crudos = env.from_source(fuente, WatermarkStrategy.no_watermarks(), "entrada-kafka")
 
     validos = crudos.process(Validar(), output_type=Types.STRING()).name("validar")
@@ -190,7 +196,7 @@ def main():
                .process(DetectarFraude(), output_type=Types.STRING())
                .name("detectar-fraude"))
     alertas.sink_to(sink("alertas-fraude")).name("sink-alertas")
-    alertas.print()  # tambien se ven en docker compose logs -f taskmanager
+    alertas.print()  # tambien se ven en: docker compose logs -f taskmanager
 
     env.execute("job2-fraude-dlq")
 
