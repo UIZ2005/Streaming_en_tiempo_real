@@ -1,7 +1,7 @@
 
 FROM flink:1.18.1-scala_2.12-java11
 
-# 1) los TaskManager ejecutan nuestro código Python en procesos "worker"
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 python3-pip \
     && ln -sf /usr/bin/python3 /usr/bin/python \
