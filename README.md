@@ -2,6 +2,8 @@
 
 Simulación de un sistema de monitoreo de transacciones bancarias. Los productores generan pagos, transferencias e inicios de sesión; Kafka los recibe, Flink los valida, calcula agregados por minuto y detecta fraude, Telegraf los lleva a InfluxDB y Grafana los muestra en vivo.
 
+## Link de la presentación del proyecto
+https://canva.link/ugufldz1sdcpqln
 
 ## Arquitectura
 
